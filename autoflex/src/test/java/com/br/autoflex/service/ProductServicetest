@@ -1,0 +1,119 @@
+package com.br.autoflex.service;
+
+import com.br.autoflex.domain.Product;
+import com.br.autoflex.domain.ProductMaterial;
+import com.br.autoflex.domain.RawMaterial;
+import com.br.autoflex.dto.ProductionSuggestionDTO;
+import com.br.autoflex.dto.ProductionSuggestionItemDTO;
+import com.br.autoflex.repository.ProductRepository;
+import com.br.autoflex.repository.RawMaterialRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class) // Habilita o uso do Mockito nesta classe
+class ProductServiceTest {
+
+    @Mock
+    private ProductRepository productRepository;
+
+    @Mock
+    private RawMaterialRepository rawMaterialRepository;
+
+    @InjectMocks
+    private ProductService productService; // O Mockito vai injetar os Mocks acima aqui dentro
+
+    @Test
+    @DisplayName("Deve calcular a sugestão de produção corretamente e deduzir os insumos em memória")
+    void calculateProductionSuggestion_Success() {
+        // ==========================================
+        // 1. ARRANGE (Preparação)
+        // ==========================================
+        
+        // Criando as Matérias-Primas com estoque desbalanceado
+        RawMaterial flour = createRawMaterial(1L, "Flour", 2000);
+        RawMaterial eggs = createRawMaterial(2L, "Eggs", 30);
+        RawMaterial chocolate = createRawMaterial(3L, "Chocolate", 10);
+        
+        List<RawMaterial> mockStock = Arrays.asList(flour, eggs, chocolate);
+
+        // Criando o Chocolate Cake (R$ 27) - Usa 200 Flour, 3 Eggs, 5 Chocolate
+        Product chocolateCake = new Product();
+        chocolateCake.setId(1L);
+        chocolateCake.setName("Chocolate Cake");
+        chocolateCake.setPrice(new BigDecimal("27.0"));
+        chocolateCake.getProductMaterials().add(createProductMaterial(chocolateCake, flour, 200));
+        chocolateCake.getProductMaterials().add(createProductMaterial(chocolateCake, eggs, 3));
+        chocolateCake.getProductMaterials().add(createProductMaterial(chocolateCake, chocolate, 5));
+
+        // Criando o Cake normal (R$ 20) - Usa 200 Flour, 3 Eggs
+        Product normalCake = new Product();
+        normalCake.setId(2L);
+        normalCake.setName("Cake");
+        normalCake.setPrice(new BigDecimal("20.0"));
+        normalCake.getProductMaterials().add(createProductMaterial(normalCake, flour, 200));
+        normalCake.getProductMaterials().add(createProductMaterial(normalCake, eggs, 3));
+
+        List<Product> mockProducts = Arrays.asList(chocolateCake, normalCake);
+
+        // "Ensinando" os Mocks: Quando o service chamar o repository, retorne essas listas falsas
+        when(productRepository.findAllByOrderByPriceDesc()).thenReturn(mockProducts);
+        when(rawMaterialRepository.findAll()).thenReturn(mockStock);
+
+        // ==========================================
+        // 2. ACT (Ação)
+        // ==========================================
+        ProductionSuggestionDTO result = productService.calculateProductionSuggestion();
+
+        // ==========================================
+        // 3. ASSERT (Verificação)
+        // ==========================================
+        
+        // Verificamos se não retornou nulo
+        assertNotNull(result);
+        
+        // Esperamos 2 tipos de produtos na sugestão
+        assertEquals(2, result.getProducts().size());
+
+        // Verificando o Chocolate Cake (O estoque permite 2 bolos, pq só temos 10 chocolates)
+        ProductionSuggestionItemDTO chocItem = result.getProducts().get(0);
+        assertEquals("Chocolate Cake", chocItem.getProductName());
+        assertEquals(2, chocItem.getQuantityToProduce());
+
+        // Verificando o Cake (Restaram 1600 flour e 24 eggs -> permite 8 bolos)
+        ProductionSuggestionItemDTO normalItem = result.getProducts().get(1);
+        assertEquals("Cake", normalItem.getProductName());
+        assertEquals(8, normalItem.getQuantityToProduce());
+
+        // Valor Total Esperado: (2 * R$ 27,00) + (8 * R$ 20,00) = 54 + 160 = R$ 214,00
+        assertEquals(new BigDecimal("214.0"), result.getTotalValue());
+    }
+
+    // --- Métodos Auxiliares para não poluir o teste ---
+
+    private RawMaterial createRawMaterial(Long id, String name, int stock) {
+        RawMaterial rm = new RawMaterial();
+        rm.setId(id);
+        rm.setName(name);
+        rm.setStockQuantity(stock);
+        return rm;
+    }
+
+    private ProductMaterial createProductMaterial(Product product, RawMaterial rawMaterial, int quantity) {
+        ProductMaterial pm = new ProductMaterial();
+        pm.setProduct(product);
+        pm.setRawMaterial(rawMaterial);
+        pm.setQuantityRequired(quantity);
+        return pm;
+    }
+}

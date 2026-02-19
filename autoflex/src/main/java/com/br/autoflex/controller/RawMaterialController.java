@@ -28,4 +28,15 @@ public class RawMaterialController {
     public ResponseEntity<List<RawMaterial>> findAll() {
         return ResponseEntity.ok(rawMaterialService.findAll());
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<RawMaterial> update(@PathVariable Long id, @RequestBody RawMaterialRequestDTO dto) {
+        return ResponseEntity.ok(rawMaterialService.update(id, dto));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        rawMaterialService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
 }
