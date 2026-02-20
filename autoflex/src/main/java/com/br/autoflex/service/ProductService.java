@@ -55,11 +55,8 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public ProductionSuggestionDTO calculateProductionSuggestion() {
-        // a. Busque todos os produtos ordenados por preço (maior para menor).
         List<Product> products = productRepository.findAllByOrderByPriceDesc();
 
-        // b. Busque todo o estoque de RawMaterial e coloque em um Map<Long, Integer>
-        // (ID -> Quantidade)
         List<RawMaterial> allMaterials = rawMaterialRepository.findAll();
         Map<Long, Integer> stockMap = allMaterials.stream()
                 .collect(Collectors.toMap(RawMaterial::getId, RawMaterial::getStockQuantity));
@@ -67,18 +64,11 @@ public class ProductService {
         List<ProductionSuggestionItemDTO> suggestionItems = new ArrayList<>();
         BigDecimal totalValue = BigDecimal.ZERO;
 
-        // c. Itere sobre os produtos.
         for (Product product : products) {
             int maxProducibleQuantity = Integer.MAX_VALUE;
 
-            // Verifique o "gargalo"
             if (product.getProductMaterials().isEmpty()) {
-                maxProducibleQuantity = 0; // Se não tem materiais definidos, vamos assumir 0 ou ignorar?
-                // Logicamente se não precisa de nada e tem preço, seria infinito. Vamos assumir
-                // 0 para segurança ou pular.
-                // O enunciado diz "verifique o gargalo... com os insumos disponíveis".
-                // Se não gasta insumo, tecnicamente é infinito, mas vamos tratar como 0 para
-                // não quebrar a lógica de "produção".
+                maxProducibleQuantity = 0;
                 continue;
             }
 
@@ -86,7 +76,7 @@ public class ProductService {
                 Long rawMaterialId = pm.getRawMaterial().getId();
                 Integer required = pm.getQuantityRequired();
                 if (required == null || required <= 0) {
-                    continue; // Skip invalid or non-limiting materials
+                    continue;
                 }
                 Integer available = stockMap.getOrDefault(rawMaterialId, 0);
 
@@ -96,19 +86,15 @@ public class ProductService {
                 }
             }
 
-            // d. Se der para produzir (> 0)
             if (maxProducibleQuantity > 0) {
-                // Adicione na lista de sugestão
                 ProductionSuggestionItemDTO itemDTO = new ProductionSuggestionItemDTO();
                 itemDTO.setProductName(product.getName());
                 itemDTO.setQuantityToProduce(maxProducibleQuantity);
                 suggestionItems.add(itemDTO);
 
-                // Some ao valor total
                 BigDecimal productTotal = product.getPrice().multiply(BigDecimal.valueOf(maxProducibleQuantity));
                 totalValue = totalValue.add(productTotal);
 
-                // Subtraia os insumos usados do Map (estoque virtual)
                 for (ProductMaterial pm : product.getProductMaterials()) {
                     Long rawMaterialId = pm.getRawMaterial().getId();
                     Integer required = pm.getQuantityRequired();
@@ -132,7 +118,6 @@ public class ProductService {
         return productRepository.findAll();
     }
 
-    // Adicione estes métodos
     @Transactional
     public Product update(Long id, ProductRequestDTO dto) {
         Product product = productRepository.findById(id)
@@ -141,8 +126,6 @@ public class ProductService {
         product.setName(dto.getName());
         product.setPrice(dto.getPrice());
 
-        // Atualização da Receita (Estratégia: Limpar e refazer)
-        // O orphanRemoval=true na entidade faz a mágica de deletar os antigos do banco
         product.getProductMaterials().clear();
 
         if (dto.getMaterials() != null) {
